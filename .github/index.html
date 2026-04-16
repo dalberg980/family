@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Family Calendar</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/crypto-js/4.2.0/crypto-js.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #f7f6f3;
+      --surface: #ffffff;
+      --border: rgba(0,0,0,0.10);
+      --text: #1a1a1a;
+      --muted: #6b6b6b;
+      --accent: #4a7c59;
+      --accent-light: #eaf3de;
+      --danger: #e24b4a;
+      --radius: 12px;
+      --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.06);
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── LOGIN SCREEN ── */
+    #login-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+
+    .login-card {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 2.5rem 2rem;
+      width: 100%;
+      max-width: 380px;
+      text-align: center;
+    }
+
+    .login-icon {
+      width: 56px;
+      height: 56px;
+      background: var(--accent-light);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1.5rem;
+    }
+
+    .login-icon svg { width: 28px; height: 28px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .login-card h1 { font-size: 20px; font-weight: 500; margin-bottom: 0.25rem; }
+    .login-card p { font-size: 14px; color: var(--muted); margin-bottom: 1.75rem; }
+
+    .input-wrap { position: relative; margin-bottom: 1rem; }
+    .input-wrap input {
+      width: 100%;
+      padding: 10px 42px 10px 14px;
+      border: 0.5px solid var(--border);
+      border-radius: 8px;
+      font-size: 15px;
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .input-wrap input:focus { border-color: var(--accent); background: var(--surface); }
+    .toggle-pw {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; padding: 0;
+      color: var(--muted);
+    }
+    .toggle-pw svg { width: 18px; height: 18px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+    .login-btn {
+      width: 100%;
+      padding: 11px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    .login-btn:hover { opacity: 0.88; }
+
+    .error-msg {
+      display: none;
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 0.75rem;
+    }
+
+    /* ── APP SCREEN ── */
+    #app-screen { display: none; flex-direction: column; min-height: 100vh; }
+
+    header {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border);
+      padding: 0 1.5rem;
+      height: 58px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky; top: 0; z-index: 10;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 10px; }
+    .header-logo {
+      width: 32px; height: 32px; background: var(--accent-light);
+      border-radius: 8px; display: flex; align-items: center; justify-content: center;
+    }
+    .header-logo svg { width: 18px; height: 18px; stroke: var(--accent); fill: none; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    header h1 { font-size: 16px; font-weight: 500; }
+
+    .header-right { display: flex; align-items: center; gap: 8px; }
+    #account-name { font-size: 13px; color: var(--muted); }
+    .icon-btn {
+      background: none; border: 0.5px solid var(--border); border-radius: 8px;
+      padding: 6px 10px; cursor: pointer; font-size: 13px; color: var(--muted);
+      transition: background 0.12s;
+    }
+    .icon-btn:hover { background: var(--bg); }
+
+    /* ── TOOLBAR ── */
+    .toolbar {
+      background: var(--surface);
+      border-bottom: 0.5px solid var(--border);
+      padding: 10px 1.5rem;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .nav-group { display: flex; align-items: center; gap: 6px; }
+    .nav-btn {
+      background: none; border: 0.5px solid var(--border); border-radius: 6px;
+      padding: 5px 10px; cursor: pointer; font-size: 13px; color: var(--text);
+      transition: background 0.12s;
+    }
+    .nav-btn:hover { background: var(--bg); }
+    #current-range { font-size: 15px; font-weight: 500; min-width: 220px; }
+
+    .view-group { display: flex; border: 0.5px solid var(--border); border-radius: 6px; overflow: hidden; margin-left: auto; }
+    .view-btn {
+      background: none; border: none; border-right: 0.5px solid var(--border);
+      padding: 5px 12px; cursor: pointer; font-size: 13px; color: var(--muted);
+      transition: background 0.12s;
+    }
+    .view-btn:last-child { border-right: none; }
+    .view-btn.active { background: var(--accent-light); color: var(--accent); font-weight: 500; }
+    .view-btn:hover:not(.active) { background: var(--bg); }
+
+    /* ── CALENDAR GRID ── */
+    #calendar-wrap { flex: 1; overflow: auto; padding: 1rem 1.5rem 2rem; }
+
+    .cal-grid {
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      min-width: 600px;
+    }
+
+    /* day headers */
+    .day-headers {
+      display: grid;
+      grid-template-columns: 52px repeat(7, 1fr);
+      border-bottom: 0.5px solid var(--border);
+    }
+    .day-header-gutter { /* empty corner */ }
+    .day-header {
+      padding: 8px 6px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--muted);
+      font-weight: 400;
+      border-left: 0.5px solid var(--border);
+    }
+    .day-header .day-num {
+      display: block;
+      font-size: 18px;
+      font-weight: 500;
+      color: var(--text);
+      line-height: 1.2;
+      margin-top: 2px;
+    }
+    .day-header.today .day-num {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 2px auto 0;
+    }
+
+    /* time grid */
+    .time-grid {
+      display: grid;
+      grid-template-columns: 52px repeat(7, 1fr);
+      position: relative;
+    }
+
+    .time-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .time-slot {
+      height: 48px;
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-end;
+      padding: 2px 8px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+      border-top: 0.5px solid var(--border);
+    }
+    .time-slot:first-child { border-top: none; }
+
+    .day-col {
+      border-left: 0.5px solid var(--border);
+      position: relative;
+    }
+    .hour-cell {
+      height: 48px;
+      border-top: 0.5px solid var(--border);
+    }
+    .hour-cell:first-child { border-top: none; }
+    .hour-cell.half { border-top: 0.5px dashed rgba(0,0,0,0.06); }
+
+    /* events */
+    .event-block {
+      position: absolute;
+      left: 2px; right: 2px;
+      border-radius: 4px;
+      padding: 2px 5px;
+      font-size: 11px;
+      font-weight: 500;
+      overflow: hidden;
+      cursor: pointer;
+      line-height: 1.4;
+      z-index: 2;
+      transition: filter 0.1s;
+    }
+    .event-block:hover { filter: brightness(0.92); }
+    .event-block .ev-time { font-weight: 400; opacity: 0.8; font-size: 10px; }
+
+    /* all-day row */
+    .allday-row {
+      display: grid;
+      grid-template-columns: 52px repeat(7, 1fr);
+      border-bottom: 0.5px solid var(--border);
+      min-height: 28px;
+    }
+    .allday-label {
+      font-size: 10px; color: var(--muted);
+      padding: 4px 4px 4px 0; text-align: right; align-self: center;
+    }
+    .allday-cell {
+      border-left: 0.5px solid var(--border);
+      padding: 2px 2px;
+      display: flex; flex-wrap: wrap; gap: 2px;
+    }
+    .allday-event {
+      background: var(--accent-light); color: var(--accent);
+      border-radius: 3px; font-size: 11px; font-weight: 500;
+      padding: 1px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      max-width: 100%;
+    }
+
+    /* sidebar calendars */
+    .sidebar-wrap {
+      display: flex;
+      gap: 1rem;
+      align-items: flex-start;
+    }
+    #calendars-sidebar {
+      width: 180px;
+      flex-shrink: 0;
+      background: var(--surface);
+      border: 0.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem;
+    }
+    #calendars-sidebar h3 { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 0.75rem; }
+    .cal-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; cursor: pointer; font-size: 13px;
+    }
+    .cal-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .cal-item.hidden .cal-dot { opacity: 0.3; }
+    .cal-item.hidden span { color: var(--muted); }
+
+    #main-col { flex: 1; min-width: 0; }
+
+    /* ── LOADING / ERROR ── */
+    #loading-state, #error-state {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 4rem 2rem; text-align: center; gap: 1rem;
+    }
+    #error-state { color: var(--danger); }
+    .spinner {
+      width: 32px; height: 32px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── MONTH VIEW ── */
+    .month-grid {
+      background: var(--surface); border: 0.5px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+    }
+    .month-dow-row {
+      display: grid; grid-template-columns: repeat(7, 1fr);
+      border-bottom: 0.5px solid var(--border);
+    }
+    .month-dow { padding: 8px; text-align: center; font-size: 12px; color: var(--muted); }
+    .month-weeks {}
+    .month-week { display: grid; grid-template-columns: repeat(7, 1fr); }
+    .month-cell {
+      border-top: 0.5px solid var(--border);
+      border-right: 0.5px solid var(--border);
+      min-height: 90px; padding: 4px;
+    }
+    .month-cell:nth-child(7n) { border-right: none; }
+    .month-day-num {
+      font-size: 12px; font-weight: 500; width: 22px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%; margin-bottom: 2px;
+    }
+    .month-cell.other-month .month-day-num { color: #bbb; }
+    .month-cell.today .month-day-num { background: var(--accent); color: #fff; }
+    .month-ev {
+      font-size: 10px; border-radius: 3px; padding: 1px 4px; margin-bottom: 1px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500;
+    }
+    .month-more { font-size: 10px; color: var(--muted); padding: 1px 4px; }
+
+    /* ── AGENDA VIEW ── */
+    .agenda-list { display: flex; flex-direction: column; gap: 0; }
+    .agenda-date-group {}
+    .agenda-date-label {
+      font-size: 12px; font-weight: 500; color: var(--muted);
+      padding: 12px 0 4px; text-transform: uppercase; letter-spacing: 0.05em;
+      border-bottom: 0.5px solid var(--border); margin-bottom: 4px;
+    }
+    .agenda-event {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 8px 10px; border-radius: 6px; cursor: pointer;
+      transition: background 0.1s;
+    }
+    .agenda-event:hover { background: var(--bg); }
+    .agenda-ev-dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+    .agenda-ev-info {}
+    .agenda-ev-title { font-size: 14px; font-weight: 500; }
+    .agenda-ev-time { font-size: 12px; color: var(--muted); }
+
+    @media (max-width: 700px) {
+      .sidebar-wrap { flex-direction: column; }
+      #calendars-sidebar { width: 100%; }
+      #current-range { font-size: 13px; min-width: 0; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ══════════════════ LOGIN ══════════════════ -->
+<div id="login-screen">
+  <div class="login-card">
+    <div class="login-icon">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+    </div>
+    <h1>Family Calendar</h1>
+    <p>Enter your password to continue</p>
+    <div class="input-wrap">
+      <input type="password" id="pw-input" placeholder="Password" autocomplete="current-password" />
+      <button class="toggle-pw" onclick="togglePw()" type="button">
+        <svg id="eye-icon" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+    </div>
+    <button class="login-btn" onclick="tryLogin()">Sign in</button>
+    <div class="error-msg" id="error-msg">Incorrect password. Please try again.</div>
+  </div>
+</div>
+
+<!-- ══════════════════ APP ══════════════════ -->
+<div id="app-screen">
+  <header>
+    <div class="header-left">
+      <div class="header-logo">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+      </div>
+      <h1>Family Calendar</h1>
+    </div>
+    <div class="header-right">
+      <span id="account-name"></span>
+      <button class="icon-btn" onclick="signOut()">Sign out</button>
+    </div>
+  </header>
+
+  <div class="toolbar">
+    <div class="nav-group">
+      <button class="nav-btn" onclick="navToday()">Today</button>
+      <button class="nav-btn" onclick="navPrev()">&#8249;</button>
+      <button class="nav-btn" onclick="navNext()">&#8250;</button>
+    </div>
+    <span id="current-range"></span>
+    <div class="view-group">
+      <button class="view-btn" id="btn-month" onclick="setView('month')">Month</button>
+      <button class="view-btn active" id="btn-week" onclick="setView('week')">Week</button>
+      <button class="view-btn" id="btn-agenda" onclick="setView('agenda')">Agenda</button>
+    </div>
+  </div>
+
+  <div id="calendar-wrap">
+    <div id="loading-state">
+      <div class="spinner"></div>
+      <span style="font-size:14px;color:var(--muted)">Loading your calendars…</span>
+    </div>
+    <div id="error-state" style="display:none">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span id="error-text">Could not load calendar.</span>
+      <button class="nav-btn" onclick="loadCalendars()">Retry</button>
+    </div>
+    <div id="calendar-content" style="display:none">
+      <div class="sidebar-wrap">
+        <div id="calendars-sidebar">
+          <h3>My calendars</h3>
+          <div id="cal-list"></div>
+        </div>
+        <div id="main-col"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════
+//  CONFIG — edit these two values
+// ══════════════════════════════════════════════
+const CONFIG = {
+  // Paste your Google API key here (restricted to Calendar API + your domain)
+  API_KEY: 'YOUR_GOOGLE_API_KEY',
+
+  // SHA-256 hash of your chosen password.
+  // Generate at: https://emn178.github.io/online-tools/sha256.html
+  // Default password is "family2024" — change this!
+  PASSWORD_HASH: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+};
+
+// ══════════════════════════════════════════════
+//  CALENDAR COLORS (Google Calendar palette)
+// ══════════════════════════════════════════════
+const GCal_COLORS = [
+  '#4285F4','#33B679','#8E24AA','#E67C73','#F6BF26',
+  '#F4511E','#039BE5','#616161','#3F51B5','#0B8043','#D50000',
+];
+
+// ══════════════════════════════════════════════
+//  STATE
+// ══════════════════════════════════════════════
+let state = {
+  view: 'week',
+  anchor: new Date(),
+  calendars: [],    // { id, summary, color, hidden }
+  events: {},       // calId -> [event]
+  loading: false,
+};
+
+// ══════════════════════════════════════════════
+//  LOGIN
+// ══════════════════════════════════════════════
+function tryLogin() {
+  const pw = document.getElementById('pw-input').value;
+  const hash = CryptoJS.SHA256(pw).toString();
+  if (hash === CONFIG.PASSWORD_HASH) {
+    sessionStorage.setItem('fc_auth', hash);
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app-screen').style.display = 'flex';
+    initApp();
+  } else {
+    const el = document.getElementById('error-msg');
+    el.style.display = 'block';
+    document.getElementById('pw-input').value = '';
+    document.getElementById('pw-input').focus();
+    setTimeout(() => el.style.display = 'none', 3000);
+  }
+}
+
+function togglePw() {
+  const inp = document.getElementById('pw-input');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+function signOut() {
+  sessionStorage.removeItem('fc_auth');
+  location.reload();
+}
+
+document.getElementById('pw-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryLogin();
+});
+
+// Check if already authenticated this session
+if (sessionStorage.getItem('fc_auth') === CONFIG.PASSWORD_HASH && CONFIG.PASSWORD_HASH.length === 64) {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app-screen').style.display = 'flex';
+  initApp();
+}
+
+// ══════════════════════════════════════════════
+//  GOOGLE CALENDAR API
+// ══════════════════════════════════════════════
+async function gcalFetch(path, params = {}) {
+  params.key = CONFIG.API_KEY;
+  const qs = new URLSearchParams(params).toString();
+  const res = await fetch(`https://www.googleapis.com/calendar/v3${path}?${qs}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function fetchCalendarList() {
+  const data = await gcalFetch('/users/me/calendarList', { maxResults: 250 });
+  return (data.items || []).filter(c => c.accessRole !== 'freeBusyReader');
+}
+
+async function fetchEvents(calId, timeMin, timeMax) {
+  const data = await gcalFetch(`/calendars/${encodeURIComponent(calId)}/events`, {
+    timeMin: timeMin.toISOString(),
+    timeMax: timeMax.toISOString(),
+    singleEvents: true,
+    orderBy: 'startTime',
+    maxResults: 500,
+  });
+  return data.items || [];
+}
+
+// ══════════════════════════════════════════════
+//  INIT
+// ══════════════════════════════════════════════
+async function initApp() {
+  state.anchor = new Date();
+  updateRangeLabel();
+  loadCalendars();
+}
+
+async function loadCalendars() {
+  showState('loading');
+  try {
+    const list = await fetchCalendarList();
+    state.calendars = list.map((c, i) => ({
+      id: c.id,
+      summary: c.summary,
+      color: c.backgroundColor || GCal_COLORS[i % GCal_COLORS.length],
+      hidden: false,
+    }));
+    document.getElementById('account-name').textContent =
+      list.find(c => c.primary)?.id || '';
+    renderSidebar();
+    await loadEvents();
+  } catch (e) {
+    showState('error');
+    document.getElementById('error-text').textContent =
+      `Could not load calendars: ${e.message}`;
+  }
+}
+
+async function loadEvents() {
+  showState('loading');
+  const { min, max } = getViewRange();
+  try {
+    const results = await Promise.all(
+      state.calendars.map(c => fetchEvents(c.id, min, max).then(evs => [c.id, evs]))
+    );
+    state.events = Object.fromEntries(results);
+    showState('calendar');
+    renderView();
+  } catch (e) {
+    showState('error');
+    document.getElementById('error-text').textContent =
+      `Could not load events: ${e.message}`;
+  }
+}
+
+// ══════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════
+function navToday() {
+  state.anchor = new Date();
+  refresh();
+}
+function navPrev() {
+  state.anchor = offsetAnchor(-1);
+  refresh();
+}
+function navNext() {
+  state.anchor = offsetAnchor(1);
+  refresh();
+}
+function offsetAnchor(dir) {
+  const d = new Date(state.anchor);
+  if (state.view === 'week') d.setDate(d.getDate() + dir * 7);
+  else if (state.view === 'month') d.setMonth(d.getMonth() + dir);
+  else d.setDate(d.getDate() + dir * 14);
+  return d;
+}
+function refresh() {
+  updateRangeLabel();
+  loadEvents();
+}
+
+function setView(v) {
+  state.view = v;
+  ['month','week','agenda'].forEach(k =>
+    document.getElementById('btn-'+k).classList.toggle('active', k === v)
+  );
+  refresh();
+}
+
+function getViewRange() {
+  const d = new Date(state.anchor);
+  if (state.view === 'week') {
+    const start = startOfWeek(d);
+    const end = new Date(start); end.setDate(end.getDate() + 7);
+    return { min: start, max: end };
+  } else if (state.view === 'month') {
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    // expand to full grid weeks
+    start.setDate(start.getDate() - start.getDay());
+    end.setDate(end.getDate() + (6 - end.getDay() + 1));
+    return { min: start, max: end };
+  } else {
+    const start = new Date(d); start.setHours(0,0,0,0);
+    const end = new Date(start); end.setDate(end.getDate() + 30);
+    return { min: start, max: end };
+  }
+}
+
+function startOfWeek(d) {
+  const c = new Date(d);
+  const day = c.getDay();
+  c.setDate(c.getDate() - day);
+  c.setHours(0,0,0,0);
+  return c;
+}
+
+function updateRangeLabel() {
+  const el = document.getElementById('current-range');
+  const d = state.anchor;
+  const months = ['January','February','March','April','May','June',
+                  'July','August','September','October','November','December'];
+  if (state.view === 'week') {
+    const s = startOfWeek(d);
+    const e = new Date(s); e.setDate(e.getDate() + 6);
+    el.textContent = s.getMonth() === e.getMonth()
+      ? `${months[s.getMonth()]} ${s.getDate()} – ${e.getDate()}, ${s.getFullYear()}`
+      : `${months[s.getMonth()]} ${s.getDate()} – ${months[e.getMonth()]} ${e.getDate()}, ${s.getFullYear()}`;
+  } else if (state.view === 'month') {
+    el.textContent = `${months[d.getMonth()]} ${d.getFullYear()}`;
+  } else {
+    el.textContent = `${months[d.getMonth()]} ${d.getFullYear()} (30 days)`;
+  }
+}
+
+// ══════════════════════════════════════════════
+//  SIDEBAR
+// ══════════════════════════════════════════════
+function renderSidebar() {
+  const el = document.getElementById('cal-list');
+  el.innerHTML = state.calendars.map(c => `
+    <div class="cal-item" data-id="${c.id}" onclick="toggleCal('${c.id}')">
+      <div class="cal-dot" style="background:${c.color}"></div>
+      <span>${c.summary}</span>
+    </div>
+  `).join('');
+}
+
+function toggleCal(id) {
+  const cal = state.calendars.find(c => c.id === id);
+  if (cal) cal.hidden = !cal.hidden;
+  document.querySelector(`.cal-item[data-id="${CSS.escape(id)}"]`)
+    .classList.toggle('hidden', cal.hidden);
+  renderView();
+}
+
+// ══════════════════════════════════════════════
+//  RENDER
+// ══════════════════════════════════════════════
+function showState(s) {
+  document.getElementById('loading-state').style.display = s === 'loading' ? 'flex' : 'none';
+  document.getElementById('error-state').style.display   = s === 'error'   ? 'flex' : 'none';
+  document.getElementById('calendar-content').style.display = s === 'calendar' ? 'block' : 'none';
+}
+
+function getAllEvents() {
+  const visible = state.calendars.filter(c => !c.hidden).map(c => c.id);
+  const out = [];
+  for (const id of visible) {
+    for (const ev of (state.events[id] || [])) {
+      const cal = state.calendars.find(c => c.id === id);
+      out.push({ ...ev, _calColor: cal?.color || '#4285F4', _calId: id });
+    }
+  }
+  return out;
+}
+
+function renderView() {
+  const el = document.getElementById('main-col');
+  if (state.view === 'week') el.innerHTML = renderWeek();
+  else if (state.view === 'month') el.innerHTML = renderMonth();
+  else el.innerHTML = renderAgenda();
+}
+
+// ── WEEK VIEW ──
+function renderWeek() {
+  const weekStart = startOfWeek(state.anchor);
+  const days = Array.from({length:7}, (_,i) => { const d = new Date(weekStart); d.setDate(d.getDate()+i); return d; });
+  const today = new Date(); today.setHours(0,0,0,0);
+  const events = getAllEvents();
+
+  const HOURS = Array.from({length:24}, (_,i) => i);
+  const PX_PER_HOUR = 48;
+
+  // Split all-day vs timed
+  const allDayEvs = events.filter(ev => ev.start?.date && !ev.start?.dateTime);
+  const timedEvs  = events.filter(ev => ev.start?.dateTime);
+
+  // All-day row
+  const alldayRow = `
+    <div class="allday-row">
+      <div class="allday-label">all‑day</div>
+      ${days.map(d => {
+        const ds = fmt(d);
+        const dayEvs = allDayEvs.filter(ev => {
+          const s = ev.start.date; const e = ev.end?.date || s;
+          return s <= ds && e > ds;
+        });
+        return `<div class="allday-cell">${dayEvs.map(ev =>
+          `<div class="allday-event" style="background:${ev._calColor}22;color:${ev._calColor}">${ev.summary||'(no title)'}</div>`
+        ).join('')}</div>`;
+      }).join('')}
+    </div>`;
+
+  // Day headers
+  const headers = `
+    <div class="day-headers">
+      <div class="day-header-gutter"></div>
+      ${days.map(d => {
+        const isToday = d.getTime() === today.getTime();
+        return `<div class="day-header${isToday?' today':''}">
+          <span style="font-size:11px;text-transform:uppercase;letter-spacing:.04em">${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d.getDay()]}</span>
+          <span class="day-num">${d.getDate()}</span>
+        </div>`;
+      }).join('')}
+    </div>`;
+
+  // Time grid
+  const timeCol = `<div class="time-col">${HOURS.map(h =>
+    `<div class="time-slot">${h === 0 ? '' : fmt12(h)}</div>`
+  ).join('')}</div>`;
+
+  const dayCols = days.map((d, di) => {
+    const ds = fmt(d);
+    const dayEvs = timedEvs.filter(ev => fmtDT(new Date(ev.start.dateTime)) === ds);
+
+    const blocks = dayEvs.map(ev => {
+      const start = new Date(ev.start.dateTime);
+      const end   = new Date(ev.end?.dateTime || ev.start.dateTime);
+      const top    = (start.getHours() + start.getMinutes()/60) * PX_PER_HOUR;
+      const height = Math.max(18, ((end - start)/3600000) * PX_PER_HOUR);
+      const bg = ev._calColor + '33';
+      const text = ev._calColor;
+      return `<div class="event-block" style="top:${top}px;height:${height}px;background:${bg};color:${text};border-left:3px solid ${ev._calColor}">
+        <div>${ev.summary||'(no title)'}</div>
+        <div class="ev-time">${fmtTime(start)} – ${fmtTime(end)}</div>
+      </div>`;
+    }).join('');
+
+    const cells = HOURS.map(h =>
+      `<div class="hour-cell"></div>`
+    ).join('');
+
+    return `<div class="day-col" style="position:relative">${cells}${blocks}</div>`;
+  }).join('');
+
+  const timeGrid = `
+    <div class="time-grid">
+      ${timeCol}
+      ${dayCols}
+    </div>`;
+
+  return `<div class="cal-grid">${headers}${alldayRow}${timeGrid}</div>`;
+}
+
+// ── MONTH VIEW ──
+function renderMonth() {
+  const { min } = getViewRange();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const curMonth = state.anchor.getMonth();
+  const events = getAllEvents();
+
+  let html = `<div class="month-grid">
+    <div class="month-dow-row">
+      ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
+        `<div class="month-dow">${d}</div>`
+      ).join('')}
+    </div>
+    <div class="month-weeks">`;
+
+  const d = new Date(min);
+  for (let week = 0; week < 6; week++) {
+    html += `<div class="month-week">`;
+    for (let day = 0; day < 7; day++) {
+      const ds = fmt(d);
+      const isToday = d.getTime() === today.getTime();
+      const isOther = d.getMonth() !== curMonth;
+      const dayEvs = events.filter(ev => {
+        if (ev.start?.date) return ev.start.date === ds;
+        if (ev.start?.dateTime) return fmtDT(new Date(ev.start.dateTime)) === ds;
+        return false;
+      }).slice(0,3);
+
+      html += `<div class="month-cell${isToday?' today':''}${isOther?' other-month':''}">
+        <div class="month-day-num">${d.getDate()}</div>
+        ${dayEvs.map(ev => `<div class="month-ev" style="background:${ev._calColor}22;color:${ev._calColor}">${ev.summary||'(no title)'}</div>`).join('')}
+      </div>`;
+      d.setDate(d.getDate()+1);
+    }
+    html += `</div>`;
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+// ── AGENDA VIEW ──
+function renderAgenda() {
+  const { min, max } = getViewRange();
+  const events = getAllEvents().filter(ev => {
+    const d = ev.start?.date ? new Date(ev.start.date) : new Date(ev.start?.dateTime);
+    return d >= min && d < max;
+  });
+
+  events.sort((a, b) => {
+    const da = a.start?.date || a.start?.dateTime;
+    const db = b.start?.date || b.start?.dateTime;
+    return da < db ? -1 : 1;
+  });
+
+  if (!events.length) return `<div style="padding:3rem;text-align:center;color:var(--muted);font-size:14px">No events in this period.</div>`;
+
+  const groups = {};
+  for (const ev of events) {
+    const key = ev.start?.date || fmtDT(new Date(ev.start?.dateTime));
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(ev);
+  }
+
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const days = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+  return `<div class="agenda-list">${Object.entries(groups).map(([key, evs]) => {
+    const d = new Date(key + (key.includes('T') ? '' : 'T00:00:00'));
+    const label = `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+    return `<div class="agenda-date-group">
+      <div class="agenda-date-label">${label}</div>
+      ${evs.map(ev => {
+        const timeStr = ev.start?.date ? 'All day' :
+          `${fmtTime(new Date(ev.start.dateTime))} – ${fmtTime(new Date(ev.end?.dateTime || ev.start.dateTime))}`;
+        return `<div class="agenda-event">
+          <div class="agenda-ev-dot" style="background:${ev._calColor}"></div>
+          <div class="agenda-ev-info">
+            <div class="agenda-ev-title">${ev.summary||'(no title)'}</div>
+            <div class="agenda-ev-time">${timeStr}${ev.location ? ' · '+ev.location : ''}</div>
+          </div>
+        </div>`;
+      }).join('')}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ══════════════════════════════════════════════
+//  HELPERS
+// ══════════════════════════════════════════════
+function fmt(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+function fmtDT(d) { return fmt(d); }
+function fmt12(h) {
+  if (h === 0) return '12 AM';
+  if (h < 12) return `${h} AM`;
+  if (h === 12) return '12 PM';
+  return `${h-12} PM`;
+}
+function fmtTime(d) {
+  let h = d.getHours(), m = d.getMinutes();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12 || 12;
+  return `${h}${m ? ':'+String(m).padStart(2,'0') : ''} ${ampm}`;
+}
+</script>
+</body>
+</html>
