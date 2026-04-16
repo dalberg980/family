@@ -1,0 +1,170 @@
+name: Claude Code
+
+  # Trigger on issue and PR interactions
+  on:
+    issue_comment:
+      types: [created]
+    pull_request_review_comment:
+      types: [created]
+    issues:
+      types: [opened, assigned, labeled]
+    pull_request_review:
+      types: [submitted]
+
+  jobs:
+    claude:
+      # Only trigger for human users — prevent bot loops
+      if: |
+        github.actor != 'claude[bot]' &&
+        github.actor != 'dependabot[bot]' &&
+        github.actor != 'github-actions[bot]' &&
+        (
+          (github.event_name == 'issue_comment' &&
+           contains(github.event.comment.body, '@claude')) ||
+          (github.event_name == 'pull_request_review_comment' &&
+           contains(github.event.comment.body, '@claude')) ||
+          (github.event_name == 'pull_request_review' &&
+           contains(github.event.review.body, '@claude')) ||
+          (github.event_name == 'issues' &&
+           github.event.action == 'labeled' &&
+           github.event.label.name == 'claude') ||
+          (github.event_name == 'issues' &&
+           github.event.action != 'labeled' &&
+           (contains(github.event.issue.body, '@claude') ||
+            contains(github.event.issue.title, '@claude')))
+        )
+      runs-on: ubuntu-latest
+      timeout-minutes: 15
+      permissions:
+        contents: write       # Create commits and branches
+        pull-requests: write   # Open and update PRs
+        issues: write          # Comment on issues
+        id-token: write        # Commit signing
+        actions: read          # Read CI results
+
+      steps:
+        # ── Environment Setup ──────────────────────────
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 1
+
+        - name: Setup pnpm
+          uses: pnpm/action-setup@v4
+          with:
+            version: latest
+
+        - name: Add pnpm to PATH
+          run: |
+            PNPM_BIN="$(dirname $(which pnpm))"
+            echo "$PNPM_BIN" >> $GITHUB_PATH
+            echo "PNPM_HOME=$PNPM_BIN" >> $GITHUB_ENV
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: "22.11"
+            cache: "pnpm"
+            cache-dependency-path: "web/pnpm-lock.yaml"
+
+        - name: Setup Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: "1.24.13"
+            cache: true
+
+        # ── Caching for Performance ────────────────────
+        - name: Cache Go build
+          uses: actions/cache@v4
+          with:
+            path: ~/.cache/go-build
+            key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            restore-keys: go-build-${{ runner.os }}-
+
+        - name: Cache golangci-lint
+          uses: actions/cache@v4
+          with:
+            path: ~/.cache/golangci-lint
+            key: golangci-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            restore-keys: golangci-lint-${{ runner.os }}-
+
+        - name: Cache Nx
+          uses: actions/cache@v4
+          with:
+            path: |
+              web/.nx/cache
+              web/node_modules/.cache
+            key: nx-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml', 'web/nx.json') }}
+            restore-keys: nx-${{ runner.os }}-
+
+        # ── Dependency Installation ────────────────────
+        - name: Download Go modules
+          run: go mod download
+
+        - name: Stub frontend build directories
+          run: |
+            mkdir -p web/apps/central-portal/dist && touch web/apps/central-portal/dist/index.html
+            mkdir -p web/apps/supplier-portal/dist && touch web/apps/supplier-portal/dist/index.html
+            mkdir -p web/apps/member-portal/dist && touch web/apps/member-portal/dist/index.html
+        - name: Install frontend dependencies
+          run: cd web && pnpm install --frozen-lockfile
+
+        - name: Verify frontend setup
+          run: |
+            echo "pnpm version: $(pnpm --version)"
+            echo "pnpm location: $(which pnpm)"
+            test -d web/node_modules && echo "node_modules: OK" || (echo "node_modules: MISSING" && exit 1)
+        - name: Install backend linting tools
+          run: make init-backend
+
+        - name: Install deployment linting tools
+          run: make init-deployment-linting-tools
+
+        # ── Claude Code Action ─────────────────────────
+        - name: Run Claude Code
+          id: claude
+          uses: anthropics/claude-code-action@v1
+          with:
+            claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+            use_commit_signing: true
+            allowed_bots: claude
+            additional_permissions: |
+              actions: read
+            claude_args: |
+              --model claude-opus-4-5-20251101
+              --max-turns 30
+              --allowedTools "
+                Bash(gh:*),
+                Bash(make build),Bash(make build-be),
+                Bash(make build-be-central),
+                Bash(make build-be-supplier),
+                Bash(make build-be-member),
+                Bash(make build-fe),Bash(make build-fe-dev),
+                Bash(make build-openapi),
+                Bash(make build-openapi-central),
+                Bash(make build-openapi-supplier),
+                Bash(make build-openapi-member),
+                Bash(make lint-backend),Bash(make lint-be),
+                Bash(make lint-frontend),Bash(make lint-fe),
+                Bash(make lint-tf),
+                Bash(make format-backend),Bash(make format-be),
+                Bash(make format-frontend),
+                Bash(make test),Bash(make test-be),
+                Bash(make test-fe),Bash(make test-fe-full),
+                Bash(make check-security),
+                Bash(make check-security-deps-be),
+                Bash(make check-security-docker),
+                Bash(make check-security-tf),
+                Bash(make init),Bash(make init-backend),
+                Bash(go build ./...),Bash(go test ./...),
+                Bash(go vet ./...),
+                Bash(golangci-lint run *),
+                Bash(cd web && pnpm install --frozen-lockfile),
+                Bash(cd web && pnpm nx lint *),
+                Bash(cd web && pnpm nx test *),
+                Bash(cd web && pnpm nx build *),
+                Bash(cd web && pnpm nx run-many *),
+                Bash(cd web && pnpm run lint:fix *),
+                Bash(cd web && pnpm run format *),
+                Bash(git *),Bash(cat *),Bash(ls *),
+                Bash(find *),Bash(grep *),
+                Read,Edit,Write,MultiEdit"
