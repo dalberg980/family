@@ -1,0 +1,151 @@
+name: Claude PR Review
+
+  on:
+    # Manual trigger from GitHub Actions UI
+    workflow_dispatch:
+      inputs:
+        pr_number:
+          description: "Pull Request number to review"
+          required: true
+          type: string
+
+    # Trigger via PR comment
+    issue_comment:
+      types: [created]
+
+  jobs:
+    review:
+      if: |
+        github.event_name == 'workflow_dispatch' ||
+        (
+          github.event_name == 'issue_comment' &&
+          github.event.issue.pull_request &&
+          contains(github.event.comment.body, '@claude-review') &&
+          github.actor != 'claude[bot]' &&
+          github.actor != 'dependabot[bot]' &&
+          github.actor != 'github-actions[bot]'
+        )
+      runs-on: ubuntu-latest
+      timeout-minutes: 10
+      env:
+        PR_NUMBER: >-
+          ${{ github.event_name == 'workflow_dispatch'
+              && github.event.inputs.pr_number
+              || github.event.issue.number }}
+      permissions:
+        contents: read          # Read-only — no write access
+        pull-requests: write    # Post review comments
+        issues: write           # Comment on issues
+        actions: read           # Read CI results
+        id-token: write
+
+      steps:
+        # ── Same environment setup as claude.yml ───────
+        - name: Checkout repository
+          uses: actions/checkout@v4
+          with:
+            fetch-depth: 0                              # Full history for diff
+            ref: refs/pull/${{ env.PR_NUMBER }}/head    # Checkout PR branch
+
+        - name: Setup pnpm
+          uses: pnpm/action-setup@v4
+          with:
+            version: latest
+
+        - name: Add pnpm to PATH
+          run: |
+            PNPM_BIN="$(dirname $(which pnpm))"
+            echo "$PNPM_BIN" >> $GITHUB_PATH
+            echo "PNPM_HOME=$PNPM_BIN" >> $GITHUB_ENV
+        - name: Setup Node.js
+          uses: actions/setup-node@v4
+          with:
+            node-version: "22.11"
+            cache: "pnpm"
+            cache-dependency-path: "web/pnpm-lock.yaml"
+
+        - name: Setup Go
+          uses: actions/setup-go@v5
+          with:
+            go-version: "1.24.13"
+            cache: true
+
+        - name: Cache Go build
+          uses: actions/cache@v4
+          with:
+            path: ~/.cache/go-build
+            key: go-build-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            restore-keys: go-build-${{ runner.os }}-
+
+        - name: Cache golangci-lint
+          uses: actions/cache@v4
+          with:
+            path: ~/.cache/golangci-lint
+            key: golangci-lint-${{ runner.os }}-${{ hashFiles('go.sum') }}
+            restore-keys: golangci-lint-${{ runner.os }}-
+
+        - name: Download Go modules
+          run: go mod download
+
+        - name: Stub frontend build directories
+          run: |
+            mkdir -p web/apps/central-portal/dist && touch web/apps/central-portal/dist/index.html
+            mkdir -p web/apps/supplier-portal/dist && touch web/apps/supplier-portal/dist/index.html
+            mkdir -p web/apps/member-portal/dist && touch web/apps/member-portal/dist/index.html
+        - name: Cache Nx
+          uses: actions/cache@v4
+          with:
+            path: |
+              web/.nx/cache
+              web/node_modules/.cache
+            key: nx-${{ runner.os }}-${{ hashFiles('web/pnpm-lock.yaml', 'web/nx.json') }}
+            restore-keys: nx-${{ runner.os }}-
+
+        - name: Install frontend dependencies
+          run: cd web && pnpm install --frozen-lockfile
+
+        - name: Install backend linting tools
+          run: make init-backend
+
+        - name: Install deployment linting tools
+          run: make init-deployment-linting-tools
+
+        # ── Claude Code Review (Read-Only) ─────────────
+        - name: Run Claude Code Review
+          id: claude
+          uses: anthropics/claude-code-action@v1
+          with:
+            claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+            trigger_phrase: "@claude-review"
+            allowed_bots: claude
+
+            prompt: |
+              Review this pull request following the guidelines
+              in .claude/skills/code-review/SKILL.md.
+              The target pull request number is #${{ env.PR_NUMBER }}.
+              Provide specific, actionable feedback with file paths
+              and line numbers.
+              Be constructive. If the code looks good, say so briefly.
+            # Read-only tools — no Edit, Write, or MultiEdit
+            claude_args: |
+              --model claude-opus-4-5-20251101
+              --max-turns 30
+              --allowedTools "
+                Bash(git diff *),Bash(git log *),
+                Bash(git status),
+                Bash(cat *),Bash(ls *),Bash(find *),
+                Bash(grep *),Bash(head *),Bash(tail *),
+                Bash(wc *),Bash(tree *),
+                Bash(make lint-backend),Bash(make lint-be),
+                Bash(make lint-frontend),Bash(make lint-fe),
+                Bash(make lint-tf),
+                Bash(make test-be),Bash(make test-fe),
+                Bash(make test),
+                Bash(make check-security),
+                Bash(make check-security-deps-be),
+                Bash(go build ./...),Bash(go test ./...),
+                Bash(go vet ./...),
+                Bash(golangci-lint run *),
+                Bash(cd web && pnpm nx lint *),
+                Bash(cd web && pnpm nx test *),
+                Read"
